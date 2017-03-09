@@ -103,12 +103,15 @@ public:
 	void Shutdown() { SocketServerOneConnection::~SocketServerOneConnection();}
 	~SocketServerOneConnection()
 	{
-		shutdown(ClientSocket, SD_SEND);
+		if (ClientSocket != NULL)
+		{
+			shutdown(ClientSocket, SD_SEND);
+			closesocket(ClientSocket);
+		}
 		if(result != NULL)
 			freeaddrinfo(result);
 		if (ListenSocket != NULL)
-		closesocket(ListenSocket);
-		closesocket(ClientSocket);
+			closesocket(ListenSocket);
 		WSACleanup();
 	}
 	template<typename type>

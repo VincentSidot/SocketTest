@@ -20,7 +20,14 @@ typedef struct FuncData
 	bool cont;
 }FUNCDATA,*PFUNCDATA;
 
+typedef struct StupData
+{
+	PVOID socket;
+	PDWORD ret;
+}STUPDATA,*PSTUPDATA;
+
 DWORD WINAPI SetupFunc(PVOID arg);
+DWORD WINAPI Stup(PVOID arg);
 
 class SocketServer
 {
@@ -53,26 +60,48 @@ private:
 
 DWORD WINAPI SetupFunc(PVOID arg)
 {
+	HANDLE Handle = 0;
+	DWORD ThreadID = 0;
+	DWORD ret;
+	STUPDATA StupData;
+	StupData.ret = &ret;
 	PFUNCDATA data = (PFUNCDATA)arg;
+	StupData.socket = data->socket;
 	SocketServer* server = (SocketServer*)data->socket;
 	do {
-		server->sockets.push_back(SocketServerOneConnection());
-		if (server->sockets[SSIZE - 1].Setup(server->getPort()) != 0)
-			server->sockets.pop_back();
-		DWORD sign = server->sockets[SSIZE - 1].Read<DWORD>();
-		if (sign != SIGN)
+		Handle = CreateThread(NULL, 0, Stup, (PVOID)&StupData, 0, &ThreadID);
+		if (data->cont)
 		{
-			server->sockets[SSIZE - 1].Shutdown();
-			server->sockets.pop_back();
+			WaitForSingleObject(Handle, 1000);
+			CloseHandle(Handle);
 		}
 		else
 		{
-#ifdef DEBUG
-			std::cout << "New client connected" << std::endl;
-			std::cout << "Their is " << server->sockets.size() << " client(s) connected" << std::endl;
-#endif // DEBUG
-
+			server->sockets.pop_back();
+			CloseHandle(Handle);
 		}
 	} while (data->cont);
+	return 0;
+}
+DWORD WINAPI Stup(PVOID arg)
+{
+	PSTUPDATA data = (PSTUPDATA)arg;
+	SocketServer* server = (SocketServer*)data->socket;
+	server->sockets.push_back(SocketServerOneConnection());
+	server->sockets[SSIZE - 1].Setup(server->getPort());
+	DWORD sign = server->sockets[SSIZE - 1].Read<DWORD>();
+	if (sign != SIGN)
+	{
+		server->sockets[SSIZE - 1].Shutdown();
+		server->sockets.pop_back();
+	}
+	else
+	{
+#ifdef DEBUG
+		std::cout << "New client connected" << std::endl;
+		std::cout << "Their is " << server->sockets.size() << " client(s) connected" << std::endl;
+#endif // DEBUG
+
+	}
 	return 0;
 }
