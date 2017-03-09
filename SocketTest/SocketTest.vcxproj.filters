@@ -20,6 +20,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="SocketServerOneConnection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="SocketServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>

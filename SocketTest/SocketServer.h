@@ -1,199 +1,78 @@
-#undef UNICODE
+#define DEBUG
 
-#define WIN32_LEAN_AND_MEAN
 
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <cstdlib>
-#include <cstdio>
-#include <cstdarg>
+#include "SocketServerOneConnection.h"
 #include <vector>
+#include <iostream>
+#include <Windows.h>
 
-#pragma comment (lib, "Ws2_32.lib")
 
 #define DEFAULT_BUFLEN 1024
-#define MAX_THREADS 20
 
 using cstring = const char*;
 
-char tmp[DEFAULT_BUFLEN];
-cstring MAKESTRING(cstring str, ...)
+#define SSIZE server->sockets.size()
+#define SIGN 0xDEADBEEF
+
+typedef struct FuncData
 {
-	ZeroMemory(tmp, DEFAULT_BUFLEN);
-	va_list va;
-	va_start(va, str);
-	vsprintf_s(tmp, str, va);
-	va_end(va);
-	return tmp;
-}
+	PVOID socket;
+	bool cont;
+}FUNCDATA,*PFUNCDATA;
 
-typedef struct data
-{
-	PVOID arg;
-	PVOID var;
-	PDWORD byteread = 0;
-	DWORD varsize;
-	PVOID SocketServerClass;
-	void(*function)(PVOID);
-}DATA, *PDATA;
-
-
-DWORD WINAPI myfunction(PVOID args);
-
-
+DWORD WINAPI SetupFunc(PVOID arg);
 
 class SocketServer
 {
 public:
-
-	SocketServer(){}
-	DWORD Setup(cstring port)
+	SocketServer() {}
+	void Setup(std::string PORT)
 	{
-		try {
-			int iResult = 0;
-			//Initialize Winsock
-			iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-			if (iResult != 0)
-				throw MAKESTRING("WSAStartup failed with error: %d\n", iResult);
+		port = PORT;
+		funcdata.cont = true;
+		funcdata.socket = (PVOID) this;
+		Handle = CreateThread(NULL, 0, SetupFunc, (PVOID)&funcdata, 0, &ThreadID);
 
-			ZeroMemory(&hints, sizeof(hints));
-			hints.ai_family = AF_INET;
-			hints.ai_socktype = SOCK_STREAM;
-			hints.ai_protocol = IPPROTO_TCP;
-			hints.ai_flags = AI_PASSIVE;
-
-			// Resolve the server address and port
-			iResult = getaddrinfo(NULL, port, &hints, &result);
-			if (iResult != 0)
-				throw MAKESTRING("getaddrinfo failed with error: %d\n", iResult);
-
-			// Create a SOCKET for connecting to server
-			ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-			if (ListenSocket == INVALID_SOCKET)
-				throw MAKESTRING("socket failed with error: %ld\n", WSAGetLastError());
-
-			// Setup the TCP listening socket
-			iResult = bind(ListenSocket, result->ai_addr, (int)result->ai_addrlen);
-			if (iResult == SOCKET_ERROR)
-				throw MAKESTRING("bind failed with error: %d\n", WSAGetLastError());
-			freeaddrinfo(result);
-			result = NULL;
-
-			iResult = listen(ListenSocket, SOMAXCONN);
-			if (iResult == SOCKET_ERROR)
-				throw MAKESTRING("listen failed with error: %d\n", WSAGetLastError());
-
-			// Accept a client socket
-			ClientSocket = accept(ListenSocket, NULL, NULL);
-			if (ClientSocket == INVALID_SOCKET)
-				throw MAKESTRING("accept failed with error: %d\n", WSAGetLastError());
-
-			// No longer need server socket
-			closesocket(ListenSocket);
-			ListenSocket = NULL;
-			return 0;
-		}
-		catch (cstring str)
-		{
-			printf("%s", str);
-			SocketServer::~SocketServer();
-			return (DWORD)str[0];
-		}
 	}
-	void Shutdown() { SocketServer::~SocketServer();}
-	~SocketServer()
+	void Stop() 
 	{
-		shutdown(ClientSocket, SD_SEND);
-		if(result != NULL)
-			freeaddrinfo(result);
-		if (ListenSocket != NULL)
-		closesocket(ListenSocket);
-		closesocket(ClientSocket);
-		WSACleanup();
+		funcdata.cont = false;
+		WaitForSingleObject(Handle, INFINITE);
+		CloseHandle(Handle);
 	}
-	template<typename type>
-	type Read()
-	{
-		type temp;
-		int iResult;
-		do {
-			iResult = recv(ClientSocket, (char*)&temp, sizeof(temp), 0);
-		} while (iResult == 0);
-		
-		return temp;
-	}
-	DWORD AsyncRead(PVOID var,PDWORD byteread,DWORD varsize, void (*function)(PVOID), PVOID arg)
-	{
-		PDATA data = (PDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DATA));
-		data->arg = arg;
-		data->byteread = byteread;
-		data->var = var;
-		data->varsize = varsize;
-		data->function = function;
-		data->SocketServerClass = (PVOID) this;
-		ThreadID.push_back(0);
-		HandleID.push_back(CreateThread(NULL, 0, myfunction, (PVOID)data, 0, &ThreadID[ThreadID.size()-1]));
-		return ThreadID[ThreadID.size() - 1];
-	}
-	void WaitForAllThread()
-	{
-		WaitForMultipleObjects(ThreadID.size(),HandleID.data(), TRUE, INFINITE);
-		return;
-	}
-	void WaitForThread(DWORD _ThreadID)
-	{
-		int i = 0;
-		for (; i < ThreadID.size(); i++)
-			if (ThreadID[i] == _ThreadID) break;
-		WaitForSingleObject(HandleID[i], INFINITE);
-		return;
-	}
-	SOCKET getClientSocket() const { return ClientSocket; }
-	size_t Read(cstring buffer, size_t bufferlen)
-	{
-		int iResult;
-		do {
-			iResult = recv(ClientSocket,(char*) buffer, bufferlen, 0);
-		} while (iResult <= 0);
-		return iResult;
-	}
-	template<typename type>
-	int Write(type data)
-	{
-		int iSendResult = send(ClientSocket,(char*) &data, sizeof(data), 0);
-		if (iSendResult == SOCKET_ERROR)
-			throw MAKESTRING("send failed with error: %d\n", WSAGetLastError());
-		return iSendResult;
-	}
-	int Write(cstring buffer, size_t bufferlen)
-	{
-		int iSendResult = send(ClientSocket, buffer, bufferlen, 0);
-		if (iSendResult == SOCKET_ERROR)
-			throw MAKESTRING("send failed with error: %d\n", WSAGetLastError());
-		return iSendResult;
-	}
+	cstring getPort() const { return port.c_str(); }
 
-
+	std::vector<SocketServerOneConnection> sockets;
 private:
-
-	std::vector<DWORD> ThreadID;
-	std::vector<HANDLE> HandleID;
-	struct addrinfo *result = NULL;
-	struct addrinfo hints;
-	WSADATA wsaData;
-	SOCKET ListenSocket = INVALID_SOCKET;
-	SOCKET ClientSocket = INVALID_SOCKET;
+	DWORD ThreadID;
+	HANDLE Handle;
+	FUNCDATA funcdata;
+	std::string port;
 
 };
 
-DWORD WINAPI myfunction(PVOID args)
+DWORD WINAPI SetupFunc(PVOID arg)
 {
-	PDATA data = (PDATA)args;
-	SocketServer* socket = (SocketServer*)data->SocketServerClass;
+	PFUNCDATA data = (PFUNCDATA)arg;
+	SocketServer* server = (SocketServer*)data->socket;
 	do {
-		*data->byteread = recv(socket->getClientSocket(), (char*)data->var, data->varsize, 0);
-	} while (data->byteread == 0);
-	data->function(data->arg);
+		server->sockets.push_back(SocketServerOneConnection());
+		if (server->sockets[SSIZE - 1].Setup(server->getPort()) != 0)
+			server->sockets.pop_back();
+		DWORD sign = server->sockets[SSIZE - 1].Read<DWORD>();
+		if (sign != SIGN)
+		{
+			server->sockets[SSIZE - 1].Shutdown();
+			server->sockets.pop_back();
+		}
+		else
+		{
+#ifdef DEBUG
+			std::cout << "New client connected" << std::endl;
+			std::cout << "Their is " << server->sockets.size() << " client(s) connected" << std::endl;
+#endif // DEBUG
+
+		}
+	} while (data->cont);
 	return 0;
 }

@@ -2,6 +2,9 @@
 #include "SocketClient.h"
 
 #define DEFAULT_PORT "27015"
+char buffer[1024];
+char bufflen = 1024;
+
 using namespace std;
 
 int main()
@@ -13,11 +16,12 @@ int main()
 		cin.get();
 		ExitProcess(-1);
 	}
-	client.Write("Hello server :)",15);
-	float temp = client.Read<DWORD>();
-	cout << "Number recived : " << temp << endl;
+
+	client.Write<DWORD>(0xDEADBEEF);
+	client.Read(buffer, bufflen);
+	cout << "Server says : " << buffer << endl;
+	std::cin.get();
 	client.Shutdown();
 	cout << "Closing connection" << endl;
-	std::cin.get();
 
 }
