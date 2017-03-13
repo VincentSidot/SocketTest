@@ -46,16 +46,22 @@ class SocketServerOneConnection
 {
 public:
 
-	SocketServerOneConnection(){}
-	DWORD Setup(cstring port)
-	{
-		try {
+	SocketServerOneConnection(bool isAlone = false){
+		if (isAlone)
+		{
+			m_isAlone = isAlone;
 			int iResult = 0;
 			//Initialize Winsock
 			iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 			if (iResult != 0)
 				throw MAKESTRING("WSAStartup failed with error: %d\n", iResult);
 
+		}
+	}
+	DWORD Setup(cstring port)
+	{
+		try {
+			int iResult = 0;
 			ZeroMemory(&hints, sizeof(hints));
 			hints.ai_family = AF_INET;
 			hints.ai_socktype = SOCK_STREAM;
@@ -112,10 +118,11 @@ public:
 			freeaddrinfo(result);
 		if (ListenSocket != NULL)
 			closesocket(ListenSocket);
-		WSACleanup();
+		if(m_isAlone)
+			WSACleanup();
 	}
 	template<typename type>
-	type Read()
+	type Read() const 
 	{
 		type temp;
 		int iResult;
@@ -125,7 +132,7 @@ public:
 		
 		return temp;
 	}
-	DWORD AsyncRead(PVOID var,PDWORD byteread,DWORD varsize, void (*function)(PVOID), PVOID arg)
+	DWORD AsyncRead(PVOID var,PDWORD byteread,DWORD varsize, void (*function)(PVOID), PVOID arg) 
 	{
 		PDATA data = (PDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DATA));
 		data->arg = arg;
@@ -138,12 +145,12 @@ public:
 		HandleID.push_back(CreateThread(NULL, 0, myfunction, (PVOID)data, 0, &ThreadID[ThreadID.size()-1]));
 		return ThreadID[ThreadID.size() - 1];
 	}
-	void WaitForAllThread()
+	void WaitForAllThread() const 
 	{
 		WaitForMultipleObjects(ThreadID.size(),HandleID.data(), TRUE, INFINITE);
 		return;
 	}
-	void WaitForThread(DWORD _ThreadID)
+	void WaitForThread(DWORD _ThreadID) const 
 	{
 		int i = 0;
 		for (; i < ThreadID.size(); i++)
@@ -152,7 +159,7 @@ public:
 		return;
 	}
 	SOCKET getClientSocket() const { return ClientSocket; }
-	size_t Read(cstring buffer, size_t bufferlen)
+	size_t Read(cstring buffer, size_t bufferlen) const 
 	{
 		int iResult;
 		do {
@@ -161,29 +168,34 @@ public:
 		return iResult;
 	}
 	template<typename type>
-	int Write(type data)
+	int Write (type data) const
 	{
 		int iSendResult = send(ClientSocket,(char*) &data, sizeof(data), 0);
 		if (iSendResult == SOCKET_ERROR)
 			throw MAKESTRING("send failed with error: %d\n", WSAGetLastError());
 		return iSendResult;
 	}
-	int Write(cstring buffer, size_t bufferlen)
+	int Write(cstring buffer, size_t bufferlen) const 
 	{
 		int iSendResult = send(ClientSocket, buffer, bufferlen, 0);
 		if (iSendResult == SOCKET_ERROR)
 			throw MAKESTRING("send failed with error: %d\n", WSAGetLastError());
 		return iSendResult;
 	}
+	bool isClosed() const
+	{
+		return ClientSocket == INVALID_SOCKET;
+	}
 
 
 private:
 
 	std::vector<DWORD> ThreadID;
+	bool m_isAlone = false;
+	WSADATA wsaData;
 	std::vector<HANDLE> HandleID;
 	struct addrinfo *result = NULL;
 	struct addrinfo hints;
-	WSADATA wsaData;
 	SOCKET ListenSocket = INVALID_SOCKET;
 	SOCKET ClientSocket = INVALID_SOCKET;
 

@@ -10,12 +10,9 @@ int main()
 	server.Setup(DEFAULT_PORT);
 	std::cin.get();
 	server.Stop();
-	for (auto &i : server.sockets)
-	{
-		i.Write("Good bye friend", 16);
-		i.Shutdown();
-	}
-	server.Stop();
+	std::cout << "Stoping conection" << std::endl;
+	std::cin.get();
+	server.WriteToAll("Good bye friend", 16);
 	std::cout << "Closing connection" << std::endl;
 	std::cin.get();
 	return 0;
