@@ -89,6 +89,7 @@ public:
 	cstring getPort() const { return port.c_str(); }
 
 	std::vector<SocketServerOneConnection> sockets;
+
 private:
 	DWORD ThreadID;
 	WSADATA wsaData;
